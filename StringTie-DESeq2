@@ -1,0 +1,97 @@
+########## To Install StringTie
+
+git clone https://github.com/gpertea/stringtie
+cd stringtie
+make release
+sudo apt install stringtie
+
+
+########## stringtie first step
+
+stringtie ~/HAC84E7_3Aligned.sortedByCoord.out.bam -p 8 -G ~/Homo_sapiens.GRCh38.102.gtf -o ~/HAC84E7_3_Stringtie.gtf
+
+########## To merge
+
+stringtie --merge -p 8 
+          -G ~/Homo_sapiens.GRCh38.102.gtf 
+          -o HAC_stringtie_merged.gtf ~/HAC16E5_1_Stringtie.gtf  ~/HAC16E5_2_Stringtie.gtf  ~/HAC16E5_3_Stringtie.gtf  ~/HAC16E6_1_Stringtie.gtf  ~/HAC16E6_2_Stringtie.gtf  ~/HAC16E6_3_Stringtie.gtf  ~/HAC16E7_1_Stringtie.gtf  ~/HAC16E7_2_Stringtie.gtf  ~/HAC16E7_3_Stringtie.gtf  ~/HAC84E5_1_Stringtie.gtf  ~/HAC84E5_2_Stringtie.gtf  ~/HAC84E5_3_Stringtie.gtf  ~/HAC84E6_1_Stringtie.gtf  ~/HAC84E6_2_Stringtie.gtf  ~/HAC84E6_3_Stringtie.gtf  ~/HAC84E7_1_Stringtie.gtf  ~/HAC84E7_2_Stringtie.gtf  ~/HAC84E7_3_Stringtie.gtf ~/HAPLVX_1_Stringtie.gtf  ~/HAPLVX_2_Stringtie.gtf   ~/HAPLVX_3_Stringtie.gtf
+
+
+
+########## To Perform StringTie with -eB options and with merged gtf
+
+stringtie ~/HAC16E5_1Aligned.sortedByCoord.out.bam 
+          -p 8 
+          -G ~/HAC_stringtie_merged.gtf 
+          -o ~/HAC16E5_1Stringtie_merged.gtf 
+          -eB
+
+
+########## To import Stringtie data to Tximport
+BiocManager::install("tximportData")
+library(tximportData)
+
+
+########## For each comparison
+
+data <- c("~/HAC16E5_1_merged/t_data.ctab",
+      "~/HAC16E5_2_merged/t_data.ctab",
+      "~/HAC16E5_3_merged/t_data.ctab",
+      "~/HACPLVX_1_merged/t_data.ctab", 
+      "~/HACPLVX_2_merged/t_data.ctab", 
+      "~/HACPLVX_3_merged/t_data.ctab")
+      
+tmp <- read.table(data[1], header = TRUE)
+tx2gene <- tmp[, c("t_name", "gene_name")]
+txi <- tximport(data, type = "stringtie", tx2gene = tx2gene)
+sampleNames(data) <- c("HAC16E5_1", "HAC16E5_2", "HAC16E5_3", "HACPLVX_1", "HACPLVX_2", "HACPLVX_3")
+sampleGroup(data) <- c("HAC16E5", "HAC16E5", "HAC16E5", "PLVX", "PLVX", "PLVX")
+sampleTable <- data.frame(sampleName = sampleNames, type = sampleGroup)
+rownames(sampleTable) <- colnames(txi$counts)
+sampleTable$Type <- factor(sampleTable$Type)  
+      
+
+
+########## To start analyzing in DESeq2
+
+library (DESeq2)
+ddsTxi16E5 <- DESeqDataSetFromTximport(txi, sampleTable, design = ~ type)
+nrow(ddsTxi16E5)
+ddsTxi16E5 <- ddsTxi16E5[rowSums(counts(ddsTxi16E5)) > 5, ]
+nrow(ddsTxi16E5)
+dds16E5 <- DESeq(ddsTxi16E5)
+norm_counts <- log2(counts(dds16E5, normalized = TRUE)+1)
+write.table(norm_counts, "normalized_dds16E5.txt", quote=F, col.names=T, row.names=F, sep="\t")
+vsd <- vst(dds16E5)
+resultsNames(dds16E5)
+
+shrink_dds16E5 <- lfcShrink(dds = dds16E5,
+                       coef="HPVType_PLVX_vs_16E6",
+                       type="apeglm")
+write.table(shrink_dds16E5, "deseq2_dds16E5.txt", quote=F, col.names=T, row.names=F, sep="\t")
+
+library(biomaRt)
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+shrink_dds16E5$ensembl <- sapply( strsplit( rownames(shrink_dds16E5), split="\\+" ), "[", 1 )
+ensembl = useMart( "ensembl", dataset = "hsapiens_gene_ensembl" )
+genemap <- getBM( attributes = c("ensembl_gene_id", "entrezgene_id", "hgnc_symbol"),filters = "ensembl_gene_id",values = shrink_dds16E5$ensembl,mart = ensembl )
+idx <- match( shrink_dds16E5$ensembl, genemap$ensembl_gene_id )
+shrink_dds16E5$entrez <- genemap$entrezgene_id[ idx ]
+shrink_dds16E5$hgnc_symbol <- genemap$hgnc_symbol[ idx ]
+write.csv(as.data.frame(shrink_dds16E5), 
+          file="dds16E5vsPLVX.csv")
+
+
+########## Final
+
+
+
+
+
+
+
+
+
+
+
+
