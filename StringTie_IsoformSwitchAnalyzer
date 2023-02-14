@@ -1,43 +1,26 @@
-# <.....This project uses StringTie-IsoformSwitchAnalyzer pipeline......>
+# Splicing analysis and isoform switches
 
-
-# To install and call libraries....................................
-
-if (!require("BiocManager", quietly = TRUE))
-  install.packages("BiocManager")
-
-BiocManager::install("GenomeInfoDb")
-BiocManager::install("DESeq2")
-BiocManager::install("AnnotationDBi")
-BiocManager::install("RColorBrewer")
-BiocManager::install("ggplot2")
-
-
-
+# Load libraries
 library(GenomeInfoDb)
 library(DESeq2)
 library(AnnotationDbi)
 library(RColorBrewer)
 library(ggplot2)
-
-BiocManager::install(version='devel')
-BiocManager::install("IsoformSwitchAnalyzeR")
-packageVersion('IsoformSwitchAnalyzeR')
-
 library(IsoformSwitchAnalyzeR)
-
-BiocManager::install("BSgenome")
-BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
 library(BSgenome.Hsapiens.UCSC.hg38)
 
-# To Import data from StringTie to IsoformSwitchAnalyzeR .......................
+# Set directory
+setwd("~/Analysis/Article_isoformswitchanalyzer")
 
+# /////////////FOR ALL COMPARISONS/////////////////////////
+# Import data from StringTie
 stringTieQuant <- importIsoformExpression(
-  parentDir = "~/StringTie_16E5vsPLVX/",
+  parentDir = "~/Analysis/StringTie/StringTie-All",
   addIsofomIdAsColumn = FALSE, 
   readLength = 150
-  )
+)
 
+# Define groups
 myDesign <- data.frame(
   sampleID = colnames(stringTieQuant$abundance),
   condition = gsub('_.*', '', colnames(stringTieQuant$abundance))
@@ -45,34 +28,25 @@ myDesign <- data.frame(
 
 myDesign
 
-head(stringTieQuant$abundance, 2)
-head(stringTieQuant$counts, 2)
-
-
 switchAnalyzeRlist <- importRdata(
   isoformCountMatrix   = stringTieQuant$counts,
   isoformRepExpression = stringTieQuant$abundance,
   designMatrix         = myDesign,
-  isoformExonAnnoation = "~/HAC_stringtie_merged.gtf",
+  isoformExonAnnoation = "~/Analysis/StringTie/HAC_stringtie_merged.gtf",
   fixStringTieAnnotationProblem = TRUE
 )
 
-
 summary(switchAnalyzeRlist)
 
-
-# To add annotations based on our reference genome, predict ORF.................
-
-BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
-library(BSgenome.Hsapiens.UCSC.hg38)
+# Add annotations
 BSgenome.Hsapiens.UCSC.hg38
 genome <- BSgenome.Hsapiens.UCSC.hg38
 
 
 switchAnalyzeRlist <- isoformSwitchAnalysisPart1(
   switchAnalyzeRlist   = switchAnalyzeRlist,
-  pathToGTF = '~/Homo_sapiens.GRCh38.102.gtf',
-  pathToOutput = '~/StringTie_16E5vsPLVX/',
+  pathToGTF = '~/Analysis/StringTie/Homo_sapiens.GRCh38.102.gtf',
+  pathToOutput = '~/Analysis/Article_isoformswitchanalyzer',
   outputSequences      = TRUE,
   genomeObject = genome,
   prepareForWebServers = FALSE
@@ -83,8 +57,7 @@ head(switchAnalyzeRlist$isoformFeatures,2)
 head(switchAnalyzeRlist$exons,2)
 head(switchAnalyzeRlist$ntSequence,2)
 
-
-
+# Filtering
 switchAnalyzeRlistFiltered <- preFilter(
   switchAnalyzeRlist = switchAnalyzeRlist,
   geneExpressionCutoff = 3,
@@ -92,23 +65,17 @@ switchAnalyzeRlistFiltered <- preFilter(
   removeSingleIsoformGenes = TRUE
 )
 
-
 switchAnalyzeRlistDEXSeq <- isoformSwitchTestDEXSeq(
   switchAnalyzeRlist = switchAnalyzeRlistFiltered,
   reduceToSwitchingGenes=TRUE
 )
 
 extractSwitchSummary(switchAnalyzeRlistDEXSeq)
-
-
-switchAnalyzeRlistORF <- addORFfromGTF( switchAnalyzeRlistDEXSeq, 
-                                        pathToGTF = '~/Homo_sapiens.GRCh38.102.gtf', 
-                                        ignoreAfterPeriod = T)
-
+switchAnalyzeRlistORF <- addORFfromGTF( switchAnalyzeRlistDEXSeq, pathToGTF = '~/Analysis/StringTie/Homo_sapiens.GRCh38.102.gtf', ignoreAfterPeriod = T)
 "orfAnalysis" %in% names( switchAnalyzeRlistORF )
 
 
-
+# Extract Sequences
 NovelIsoforms <- analyzeNovelIsoformORF(
   switchAnalyzeRlistORF, 
   analysisAllIsoformsWithoutORF = TRUE, 
@@ -116,68 +83,45 @@ NovelIsoforms <- analyzeNovelIsoformORF(
 )
 
 
-# To Extract Sequences..........................................................
 
 SwitchListAnalyzed <- extractSequence(
   NovelIsoforms, 
   genomeObject = genome, 
-  pathToOutput = '~/StringTie_16E5vsPLVX',
+  pathToOutput = '~/Analysis/Article_isoformswitchanalyzer',
   writeToFile = TRUE
 )
 
-
 # To Obtain results from external databases.....................................
-
 
 SwitchListAnalyzedCPC2 <- analyzeCPC2(
   switchAnalyzeRlist   = SwitchListAnalyzed,
-  pathToCPC2resultFile = '~/result_cpc2.txt',
+  pathToCPC2resultFile = 'result_cpc2.txt',
   removeNoncodinORFs   = TRUE
 )
 
 
-SwitchListAnalyzedPfam <- analyzePFAM(
-  switchAnalyzeRlist   = SwitchListAnalyzedCPC2,
-  pathToPFAMresultFile = '~/result_Pfam.txt',
-  showProgress=FALSE
-)
-
-
-
 SwitchListAnalyzedSignalP <- analyzeSignalP(
-  switchAnalyzeRlist       = SwitchListAnalyzedPfam,
-  pathToSignalPresultFile  = '~/result_SignalP.txt'
+  switchAnalyzeRlist       = SwitchListAnalyzedCPC2,
+  pathToSignalPresultFile  = 'result_SignalP.txt'
 )
 
 
 SwitchListAnalyzedIUPred <- analyzeIUPred2A(
   switchAnalyzeRlist        = SwitchListAnalyzedSignalP,
-  pathToIUPred2AresultFile = '~/result_IUPred.txt',
+  pathToIUPred2AresultFile = 'result_IUPred.result',
   showProgress = FALSE
 )
-
 
 SwitchListAnalyzedIUPred
 
 
-
-#To analyze the alternative splicing events and creating the figures............
-
-
+#To analyze the alternative splicing events and creating the figures
 SwitchListAnalyzedAS <- analyzeAlternativeSplicing(
   switchAnalyzeRlist = SwitchListAnalyzedIUPred,
   quiet=TRUE
 )
 
-table( SwitchListAnalyzedAS$AlternativeSplicingAnalysis$ES )
-
-
-consequencesOfInterest <- c('intron_retention',
-                            'coding_potential',
-                            'NMD_status',
-                            'domains_identified',
-                            'ORF_seq_similarity')
-
+consequencesOfInterest <- c('intron_retention','coding_potential','NMD_status')
 
 SwitchListAnalyzedAS <- analyzeSwitchConsequences(
   SwitchListAnalyzedAS,
@@ -187,13 +131,11 @@ SwitchListAnalyzedAS <- analyzeSwitchConsequences(
 )
 
 
-
 extractSplicingSummary(
   SwitchListAnalyzedAS,
   asFractionTotal = FALSE,
   plotGenes=TRUE
 )
-
 
 
 splicingEnrichment <- extractSplicingEnrichment(
@@ -203,7 +145,6 @@ splicingEnrichment <- extractSplicingEnrichment(
   returnSummary=TRUE
 )
 
-
 extractSplicingGenomeWide(
   SwitchListAnalyzedAS,
   featureToExtract = 'all',
@@ -211,18 +152,6 @@ extractSplicingGenomeWide(
   plot=TRUE,
   returnResult=FALSE
 )
-
-
-# To analyze isoform switch events and its figures..............................
-
-extractTopSwitches(
-  SwitchListAnalyzedAS, 
-  filterForConsequences = FALSE, 
-  n = 100, 
-  sortByQvals = TRUE
-)
-
-
 
 switchingIso <- extractTopSwitches( 
   SwitchListAnalyzedAS, 
@@ -233,29 +162,26 @@ switchingIso <- extractTopSwitches(
 )
 
 
-
-
-
-switchingIso
-
-subset(switchingIso, gene_name == 'BUD31')
-
-switchPlot(SwitchListAnalyzedAS, gene = 'BUD31')
-
 switchPlotTopSwitches(
   switchAnalyzeRlist = SwitchListAnalyzedAS, 
   n = Inf, 
   filterForConsequences = FALSE,
   fileType = "png",
-  pathToOutput = "~/StringTie_16E5vsPLVX"
+  pathToOutput = "SS"
+)
+
+extractSwitchOverlap(
+  SwitchListAnalyzedAS,
+  filterForConsequences=TRUE,
+  plotIsoforms = FALSE
+)
+
+extractConsequenceSummary(
+  SwitchListAnalyzedAS,
+  consequencesToAnalyze=c('domains_identified','intron_retention','coding_potential'),
+  plotGenes = FALSE,     
+  asFractionTotal = FALSE
 )
 
 
-# To illustrate the genome wide analysis of consequences........................
 
-extractConsequenceSummary(
-  SwitchListAnalyzedAS, 
-  asFractionTotal = FALSE
-  )
-
-# Fin
